@@ -1,0 +1,221 @@
+:root {
+  --ups-brown: #351c15;
+  --ups-gold: #ffb500;
+  --ups-gold-dark: #cc9200;
+}
+
+body {
+  background-color: #f5f5f5;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+/* Navbar */
+.navbar {
+  background-color: var(--ups-brown) !important;
+}
+.navbar-brand {
+  font-weight: 700;
+  color: var(--ups-gold) !important;
+  font-size: 1.25rem;
+  letter-spacing: 0.5px;
+}
+.navbar-brand span {
+  color: #fff;
+  font-weight: 400;
+}
+.nav-link {
+  color: rgba(255,255,255,0.85) !important;
+}
+.nav-link:hover, .nav-link.active {
+  color: var(--ups-gold) !important;
+}
+
+/* KPI cards */
+.kpi-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  transition: box-shadow 0.2s;
+}
+.kpi-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+}
+.kpi-card .card-body {
+  padding: 1.4rem;
+}
+.kpi-value {
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ups-brown);
+}
+.kpi-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #6c757d;
+  margin-top: 0.3rem;
+}
+.kpi-icon {
+  font-size: 2rem;
+  opacity: 0.18;
+  position: absolute;
+  right: 1.2rem;
+  top: 1rem;
+}
+
+/* Charts */
+.chart-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.chart-card .card-header {
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  border-radius: 12px 12px 0 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #444;
+  padding: 0.85rem 1.25rem;
+}
+
+/* Tables */
+.table-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+.table thead th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #6c757d;
+  background: #fafafa;
+  border-bottom: 2px solid #e9ecef;
+  white-space: nowrap;
+}
+.table tbody tr:hover {
+  background: #fffbf0;
+  cursor: pointer;
+}
+.table-sm td, .table-sm th {
+  padding: 0.45rem 0.75rem;
+}
+
+/* Badges */
+.badge-on-time {
+  background-color: #198754;
+  color: #fff;
+}
+.badge-late {
+  background-color: #dc3545;
+  color: #fff;
+}
+.badge-in-transit {
+  background-color: #0d6efd;
+  color: #fff;
+}
+.badge-unknown {
+  background-color: #adb5bd;
+  color: #fff;
+}
+
+/* Status dot */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.dot-green { background: #198754; }
+.dot-red   { background: #dc3545; }
+.dot-blue  { background: #0d6efd; }
+.dot-gray  { background: #adb5bd; }
+
+/* Sync panel */
+.sync-panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 1.25rem 1.5rem;
+}
+
+/* Config warning */
+.config-alert {
+  border-left: 4px solid var(--ups-gold);
+  background: #fff8e1;
+}
+
+/* Activity timeline */
+.timeline {
+  position: relative;
+  padding-left: 1.5rem;
+}
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e9ecef;
+}
+.timeline-item {
+  position: relative;
+  padding-bottom: 1rem;
+}
+.timeline-dot {
+  position: absolute;
+  left: -1.5rem;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ups-gold);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--ups-gold);
+}
+.timeline-dot.delivered {
+  background: #198754;
+  box-shadow: 0 0 0 2px #198754;
+}
+.timeline-dot.exception {
+  background: #dc3545;
+  box-shadow: 0 0 0 2px #dc3545;
+}
+.timeline-date {
+  font-size: 0.72rem;
+  color: #6c757d;
+}
+
+/* Loading spinner overlay */
+#loading-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(255,255,255,0.7);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+#loading-overlay.show {
+  display: flex;
+}
+
+/* Pagination */
+.page-link {
+  color: var(--ups-brown);
+}
+.page-item.active .page-link {
+  background-color: var(--ups-brown);
+  border-color: var(--ups-brown);
+}
+
+/* On-time gauge */
+.gauge-ring {
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s ease;
+}

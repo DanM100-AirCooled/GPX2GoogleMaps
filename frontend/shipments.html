@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shipments — UPS KPI Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="spinner-border text-warning" style="width:3rem;height:3rem;"></div>
+</div>
+
+<nav class="navbar navbar-expand-lg navbar-dark mb-4">
+  <div class="container-fluid px-4">
+    <a class="navbar-brand" href="/"><i class="bi bi-box-seam me-2"></i>UPS <span>KPI Dashboard</span></a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link active" href="/shipments.html">Shipments</a></li>
+      </ul>
+      <div id="total-badge" class="badge bg-secondary">Loading…</div>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid px-4">
+
+  <!-- Filters -->
+  <div class="card mb-3" style="border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <div class="card-body py-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small fw-semibold mb-1">Search</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="f-search" class="form-control" placeholder="Tracking #, reference, name, city…" />
+          </div>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold mb-1">Status</label>
+          <select id="f-status" class="form-select">
+            <option value="">All</option>
+            <option value="delivered-true">Delivered</option>
+            <option value="delivered-false">In Transit</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold mb-1">On Time</label>
+          <select id="f-on-time" class="form-select">
+            <option value="">All</option>
+            <option value="true">On Time</option>
+            <option value="false">Late</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold mb-1">Dest. State</label>
+          <input type="text" id="f-state" class="form-control" placeholder="e.g. CA" maxlength="2" />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small fw-semibold mb-1">&nbsp;</label>
+          <div class="d-flex gap-2">
+            <button class="btn btn-warning text-dark fw-semibold flex-grow-1" onclick="applyFilters()">
+              <i class="bi bi-funnel me-1"></i>Filter
+            </button>
+            <button class="btn btn-outline-secondary" onclick="clearFilters()">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enrich bar -->
+  <div class="d-flex gap-2 mb-3 align-items-center">
+    <input type="text" id="enrich-tn" class="form-control form-control-sm" style="max-width:260px"
+           placeholder="Tracking # to enrich from API…" />
+    <button class="btn btn-sm btn-outline-primary" onclick="enrichTracking()">
+      <i class="bi bi-cloud-download me-1"></i>Fetch from Tracking API
+    </button>
+    <span id="enrich-msg" class="text-muted small"></span>
+  </div>
+
+  <!-- Table -->
+  <div class="card table-card mb-4">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0" id="shipments-table">
+          <thead>
+            <tr>
+              <th>Tracking #</th>
+              <th>Service</th>
+              <th>Origin</th>
+              <th>Destination</th>
+              <th>Pickup Date</th>
+              <th>Sched. Delivery</th>
+              <th>Actual Delivery</th>
+              <th>Weight</th>
+              <th>Status</th>
+              <th>References</th>
+            </tr>
+          </thead>
+          <tbody id="shipments-tbody">
+            <tr><td colspan="10" class="text-center text-muted py-4">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <nav>
+    <ul class="pagination pagination-sm justify-content-center" id="pagination"></ul>
+  </nav>
+
+</div>
+
+<!-- Detail offcanvas -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="detailCanvas" style="width:min(600px,100vw)">
+  <div class="offcanvas-header border-bottom">
+    <h6 class="offcanvas-title fw-bold" id="detail-title">Shipment Detail</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body" id="detail-body">
+    <div class="text-center text-muted py-5">Select a shipment to view details.</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/api.js"></script>
+<script>
+let currentPage = 1;
+let currentFilters = {};
+const PER_PAGE = 50;
+
+async function loadShipments(page = 1) {
+  showLoading(true);
+  currentPage = page;
+  const params = { page, per_page: PER_PAGE, ...currentFilters };
+
+  const status = currentFilters._status || "";
+  if (status === "delivered-true") { params.is_delivered = "true"; }
+  else if (status === "delivered-false") { params.is_delivered = "false"; }
+  delete params._status;
+
+  try {
+    const data = await api.shipments(params);
+    renderTable(data.shipments);
+    renderPagination(data.total, page);
+    document.getElementById("total-badge").textContent = `${data.total.toLocaleString()} shipments`;
+  } catch (err) {
+    document.getElementById("shipments-tbody").innerHTML =
+      `<tr><td colspan="10" class="text-center text-danger py-4">Error: ${err.message}</td></tr>`;
+  } finally {
+    showLoading(false);
+  }
+}
+
+function renderTable(shipments) {
+  const tbody = document.getElementById("shipments-tbody");
+  if (!shipments.length) {
+    tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">No shipments found</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = shipments.map(s => `
+    <tr onclick="openDetail('${s.tracking_number}')" style="cursor:pointer">
+      <td><code class="text-primary">${s.tracking_number}</code></td>
+      <td>${s.service_description || "—"}</td>
+      <td>${[s.origin_city, s.origin_state].filter(Boolean).join(", ") || "—"}</td>
+      <td>${[s.dest_city, s.dest_state].filter(Boolean).join(", ") || "—"}</td>
+      <td>${formatDate(s.pickup_date)}</td>
+      <td>${formatDate(s.scheduled_delivery_date)}</td>
+      <td>${formatDate(s.actual_delivery_date)}</td>
+      <td>${s.weight ? `${s.weight} ${s.weight_unit || "lbs"}` : "—"}</td>
+      <td>${onTimeBadge(s.on_time, s.is_delivered)}</td>
+      <td class="text-muted small">${(s.reference_numbers || "").split(",").slice(0,2).join(", ") || "—"}</td>
+    </tr>`).join("");
+}
+
+function renderPagination(total, page) {
+  const totalPages = Math.ceil(total / PER_PAGE);
+  const ul = document.getElementById("pagination");
+  if (totalPages <= 1) { ul.innerHTML = ""; return; }
+
+  let html = `<li class="page-item ${page === 1 ? "disabled" : ""}">
+    <a class="page-link" href="#" onclick="loadShipments(${page-1});return false">‹</a></li>`;
+
+  const start = Math.max(1, page - 2);
+  const end = Math.min(totalPages, page + 2);
+  if (start > 1) html += `<li class="page-item disabled"><span class="page-link">…</span></li>`;
+  for (let p = start; p <= end; p++) {
+    html += `<li class="page-item ${p === page ? "active" : ""}">
+      <a class="page-link" href="#" onclick="loadShipments(${p});return false">${p}</a></li>`;
+  }
+  if (end < totalPages) html += `<li class="page-item disabled"><span class="page-link">…</span></li>`;
+  html += `<li class="page-item ${page === totalPages ? "disabled" : ""}">
+    <a class="page-link" href="#" onclick="loadShipments(${page+1});return false">›</a></li>`;
+
+  ul.innerHTML = html;
+}
+
+function applyFilters() {
+  currentFilters = {};
+  const search = document.getElementById("f-search").value.trim();
+  const state = document.getElementById("f-state").value.trim();
+  const onTime = document.getElementById("f-on-time").value;
+  const status = document.getElementById("f-status").value;
+
+  if (search) currentFilters.search = search;
+  if (state) currentFilters.dest_state = state;
+  if (onTime) currentFilters.on_time = onTime;
+  if (status) currentFilters._status = status;
+
+  loadShipments(1);
+}
+
+function clearFilters() {
+  document.getElementById("f-search").value = "";
+  document.getElementById("f-state").value = "";
+  document.getElementById("f-on-time").value = "";
+  document.getElementById("f-status").value = "";
+  currentFilters = {};
+  loadShipments(1);
+}
+
+async function openDetail(trackingNumber) {
+  const canvas = new bootstrap.Offcanvas(document.getElementById("detailCanvas"));
+  document.getElementById("detail-title").textContent = trackingNumber;
+  document.getElementById("detail-body").innerHTML = `<div class="text-center py-5"><div class="spinner-border text-warning"></div></div>`;
+  canvas.show();
+
+  try {
+    const s = await api.shipment(trackingNumber);
+    document.getElementById("detail-body").innerHTML = renderDetail(s);
+  } catch (err) {
+    document.getElementById("detail-body").innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+  }
+}
+
+function renderDetail(s) {
+  const refs = (s.reference_numbers || "").split(",").filter(Boolean);
+  const excs = s.exceptions || [];
+  const acts = s.activities || [];
+
+  return `
+    <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+      ${onTimeBadge(s.on_time, s.is_delivered)}
+      <span class="badge bg-secondary">${s.service_description || "Unknown Service"}</span>
+      <span class="badge bg-light text-dark border">${s.data_source || "?"}</span>
+    </div>
+
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="small text-muted mb-1">Origin</div>
+        <div class="fw-semibold">${s.origin_name || "—"}</div>
+        <div class="small">${[s.origin_city, s.origin_state, s.origin_country].filter(Boolean).join(", ") || "—"}</div>
+      </div>
+      <div class="col-6">
+        <div class="small text-muted mb-1">Destination</div>
+        <div class="fw-semibold">${s.dest_name || "—"}</div>
+        <div class="small">${[s.dest_city, s.dest_state, s.dest_zip, s.dest_country].filter(Boolean).join(", ") || "—"}</div>
+      </div>
+    </div>
+
+    <div class="row g-2 mb-3">
+      <div class="col-4">
+        <div class="small text-muted">Pickup</div>
+        <div>${formatDate(s.pickup_date)}</div>
+      </div>
+      <div class="col-4">
+        <div class="small text-muted">Scheduled Del.</div>
+        <div>${formatDate(s.scheduled_delivery_date)}</div>
+      </div>
+      <div class="col-4">
+        <div class="small text-muted">Actual Del.</div>
+        <div class="${s.on_time === false ? "text-danger fw-semibold" : ""}">${formatDate(s.actual_delivery_date)}</div>
+      </div>
+    </div>
+
+    <div class="row g-2 mb-3">
+      <div class="col-4">
+        <div class="small text-muted">Weight</div>
+        <div>${s.weight ? `${s.weight} ${s.weight_unit || "lbs"}` : "—"}</div>
+      </div>
+      <div class="col-4">
+        <div class="small text-muted">Dimensions</div>
+        <div>${(s.length && s.width && s.height) ? `${s.length}×${s.width}×${s.height} ${s.dim_unit || "in"}` : "—"}</div>
+      </div>
+      <div class="col-4">
+        <div class="small text-muted">Packages</div>
+        <div>${s.package_count || 1}</div>
+      </div>
+    </div>
+
+    ${refs.length ? `
+    <div class="mb-3">
+      <div class="small text-muted mb-1">Reference Numbers</div>
+      ${refs.map(r => `<span class="badge bg-light text-dark border me-1">${r}</span>`).join("")}
+    </div>` : ""}
+
+    ${excs.length ? `
+    <div class="mb-3">
+      <div class="small text-muted mb-1 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Exceptions</div>
+      ${excs.map(e => `<div class="alert alert-danger py-2 px-3 mb-2 small">
+        <strong>${e.exception_code || ""}:</strong> ${e.description || "—"}
+        ${e.rescheduled_date ? `<br>Rescheduled: ${formatDate(e.rescheduled_date)}` : ""}
+      </div>`).join("")}
+    </div>` : ""}
+
+    ${acts.length ? `
+    <div class="mb-2 small text-muted">Activity Log (${acts.length} events)</div>
+    <div class="timeline">
+      ${acts.map((a, i) => {
+        const isDel = (a.status_type === "D");
+        const isExc = (a.status_type === "X");
+        return `
+        <div class="timeline-item">
+          <div class="timeline-dot ${isDel ? "delivered" : isExc ? "exception" : ""}"></div>
+          <div class="d-flex justify-content-between">
+            <div class="fw-semibold small">${a.status_description || a.status_code || "—"}</div>
+            <div class="timeline-date">${formatDate(a.date)} ${a.time ? a.time.slice(0,2)+":"+a.time.slice(2,4) : ""}</div>
+          </div>
+          <div class="small text-muted">${[a.city, a.state, a.country].filter(Boolean).join(", ") || ""}</div>
+          ${a.logical_scan ? '<span class="badge bg-light text-dark border" style="font-size:.65rem">Logical</span>' : ""}
+        </div>`;
+      }).join("")}
+    </div>` : `
+    <div class="alert alert-light text-center small py-2">
+      No activity log — <button class="btn btn-sm btn-link p-0" onclick="enrichFromDetail('${s.tracking_number}')">fetch from Tracking API</button>
+    </div>`}
+  `;
+}
+
+async function enrichFromDetail(tn) {
+  document.getElementById("detail-body").innerHTML = `<div class="text-center py-5"><div class="spinner-border text-warning"></div><p class="mt-2 text-muted small">Fetching from UPS Tracking API…</p></div>`;
+  try {
+    const s = await api.syncTracking(tn);
+    document.getElementById("detail-title").textContent = tn;
+    document.getElementById("detail-body").innerHTML = renderDetail(s);
+  } catch (err) {
+    document.getElementById("detail-body").innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+  }
+}
+
+async function enrichTracking() {
+  const tn = document.getElementById("enrich-tn").value.trim();
+  if (!tn) return;
+  const msg = document.getElementById("enrich-msg");
+  msg.textContent = "Fetching…";
+  try {
+    await api.syncTracking(tn);
+    msg.textContent = "✓ Enriched! Reloading…";
+    document.getElementById("enrich-tn").value = "";
+    setTimeout(() => { msg.textContent = ""; loadShipments(currentPage); }, 800);
+  } catch (err) {
+    msg.textContent = "Error: " + err.message;
+  }
+}
+
+document.getElementById("f-search").addEventListener("keydown", e => {
+  if (e.key === "Enter") applyFilters();
+});
+
+loadShipments();
+</script>
+</body>
+</html>
