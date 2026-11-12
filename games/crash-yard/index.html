@@ -33,7 +33,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-acti
 .stat small{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:700}
 .stat b{font-family:var(--display);font-weight:400;font-size:26px;line-height:1.05;font-variant-numeric:tabular-nums}
 .stat.right{align-items:flex-end;text-align:right}
-.btns{display:flex;gap:8px;pointer-events:auto}
+.btns{display:flex;gap:8px;pointer-events:auto;flex-wrap:wrap;justify-content:flex-end}
 button{font-family:var(--body);font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
   color:var(--chalk);background:rgba(22,20,39,.72);border:2px solid rgba(244,239,230,.35);border-radius:6px;
   padding:8px 12px;font-size:15px;min-height:40px}
@@ -80,7 +80,7 @@ button.go:active{transform:translateY(3px);box-shadow:0 2px 0 #a3760a}
     <div class="row">
       <div class="stat"><small>Damage bill</small><b id="score">0</b></div>
       <div class="stat right"><small id="launchLbl">Launch 1 of 5</small>
-        <div class="btns"><button id="skip" hidden>End launch</button><button id="mute" aria-pressed="false">Sound on</button></div>
+        <div class="btns"><button id="skip" hidden>End launch</button><button id="view">View: behind</button><button id="mute" aria-pressed="false">Sound on</button></div>
       </div>
     </div>
     <div class="row bottom">
@@ -97,6 +97,7 @@ button.go:active{transform:translateY(3px);box-shadow:0 2px 0 #a3760a}
     <ul>
       <li><b>Drag back</b> anywhere and let go to launch</li>
       <li><b>Swipe up</b> to lift, <b>down</b> to dive, <b>right</b> to boost (4 nudges)</li>
+      <li>The <b>View</b> button switches between behind and side cameras</li>
       <li>Chain smashes quickly to build a <b>combo</b></li>
     </ul>
     <button class="go" id="play">Start wrecking</button>
@@ -129,7 +130,7 @@ let score=0,launchScore=0,launchNo=0,nudges=0,comboN=0,comboT=0,maxX=0,restT=0,f
 let hitTarget=false,hurt=0;
 let pull={x:0,y:0},drag=null,swipe=null;
 let removeQ=[],delayed=[],debris=[],particles=[],texts=[],pins=[];
-let pxWorld=1;
+let pxWorld=1,view='behind';try{if(localStorage.getItem('crashyard.view')==='side')view='side'}catch(e){}
 
 function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 
@@ -390,6 +391,8 @@ cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',()=>{dra
 $('play').addEventListener('click',()=>{audio();newGame()});
 $('again').addEventListener('click',()=>{audio();newGame()});
 $('skip').addEventListener('click',endLaunch);
+function showView(){$('view').textContent='View: '+view}
+$('view').addEventListener('click',()=>{view=view==='behind'?'side':'behind';showView();try{localStorage.setItem('crashyard.view',view)}catch(e){}});showView();
 $('mute').addEventListener('click',()=>{muted=!muted;$('mute').textContent=muted?'Sound off':'Sound on';$('mute').setAttribute('aria-pressed',String(muted));if(!muted)audio()});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.addEventListener('contextmenu',e=>e.preventDefault());
@@ -539,10 +542,12 @@ function updateCam(){
   const asp=W/H;let k,fov;
   if((state==='fly'||state==='rest')&&dummy){
     const t=dummy.torso.position,Y=-t.y,v=Body.getVelocity(dummy.torso),sp=Math.hypot(v.x,v.y);
+    if(view==='side'){const visH=Math.max(620,720/asp)*1.25,D=visH*.866,cy=Math.max(visH/2-100,Y-visH*.12),cx=t.x+Math.max(-160,Math.min(260,v.x*9));
+      wantPos.set(cx,cy,D);wantLook.set(cx,cy,0);fov=60;k=.12}else{
     const back=250+Math.min(120,sp*4);
     wantPos.set(t.x-back,Math.max(55,Y+85),48);
     wantLook.set(t.x+260,Math.max(30,Y-10-v.y*3),0);
-    fov=(asp<1?74:62)+Math.min(8,sp*.25);k=.16;
+    fov=(asp<1?74:62)+Math.min(8,sp*.25);k=.16}
   }else{
     const visH=Math.max(620,720/asp),D=visH*.866,cy=visH/2-100;
     pxWorld=visH/H;
