@@ -42,6 +42,8 @@ button.go{font-family:var(--display);font-weight:400;font-size:22px;letter-spaci
   background:var(--hazard);border:0;border-radius:4px;padding:14px 30px;box-shadow:0 5px 0 #a3760a}
 button.go:active{transform:translateY(3px);box-shadow:0 2px 0 #a3760a}
 .bottom{align-items:flex-end}
+#jobs{list-style:none;margin:4px 0 0;padding:0;font-size:14px;font-weight:700;line-height:1.25;color:var(--chalk);text-shadow:0 1px 0 rgba(0,0,0,.6);max-width:44vw}
+#jobs li.done{color:var(--hazard);text-decoration:line-through}
 #nudges{display:flex;gap:6px;align-items:center}
 #nudges i{width:18px;height:10px;background:var(--hazard);transform:skewX(-20deg);display:block}
 #nudges i.off{background:rgba(244,239,230,.2)}
@@ -78,7 +80,7 @@ button.go:active{transform:translateY(3px);box-shadow:0 2px 0 #a3760a}
   <div id="combo" hidden><b id="comboX"></b><span id="comboBar"></span></div>
   <div id="hud" hidden>
     <div class="row">
-      <div class="stat"><small>Damage bill</small><b id="score">0</b></div>
+      <div class="stat"><small>Damage bill</small><b id="score">0</b><ul id="jobs"></ul></div>
       <div class="stat right"><small id="launchLbl">Launch 1 of 5</small>
         <div class="btns"><button id="skip" hidden>End launch</button><button id="view">View: behind</button><button id="mute" aria-pressed="false">Sound on</button></div>
       </div>
@@ -97,6 +99,8 @@ button.go:active{transform:translateY(3px);box-shadow:0 2px 0 #a3760a}
     <ul>
       <li><b>Drag back</b> anywhere and let go to launch</li>
       <li><b>Swipe up</b> to lift, <b>down</b> to dive, <b>right</b> to boost (4 nudges)</li>
+      <li>Hit <b>cannons</b>, <b>rockets</b>, <b>hoops</b> and <b>fans</b> to fly further</li>
+      <li>Finish the three <b>jobs</b> for big bonuses</li>
       <li>The <b>View</b> button switches between behind and side cameras</li>
       <li>Chain smashes quickly to build a <b>combo</b></li>
     </ul>
@@ -121,13 +125,13 @@ const cv=$('c');
 const COL={night:'#161427',asphalt:'#262231',hazard:'#ffc21a',flare:'#ff5a3c',glass:'#8fe3ee',chalk:'#f4efe6'};
 const DISPLAY="'Bungee','Impact','Arial Black',sans-serif";
 const SUB=1000/120, LAUNCHES=5, MAXPULL=150, POWER=0.23, NUDGES=4, PX_PER_M=50;
-const ANCHOR={x:0,y:-420}, WORLD_END=5300;
+const ANCHOR={x:0,y:-420}, WORLD_END=7400;
 
 let W=0,H=0,DPR=1,zoom=1;
 let engine,world,dummy=null,parts=[];
 let state='title',tick=0,acc=0,last=0;
 let score=0,launchScore=0,launchNo=0,nudges=0,comboN=0,comboT=0,maxX=0,restT=0,flyT=0,slow=0,shake=0,flash=0;
-let hitTarget=false,hurt=0;
+let hitTarget=false,hurt=0,captured=null,rocketT=0,stats={},jobs=[],fans=[],ballRig=null;
 let pull={x:0,y:0},drag=null,swipe=null;
 let removeQ=[],delayed=[],debris=[],particles=[],texts=[],pins=[];
 let pxWorld=1,view='behind';try{if(localStorage.getItem('crashyard.view')==='side')view='side'}catch(e){}
@@ -171,7 +175,7 @@ function slab(x,y,w,h){return rect(x,y,w,h,'slab',{isStatic:true,friction:.8})}
 function buildWorld(){
   engine=Engine.create({enableSleeping:true});engine.positionIterations=8;engine.velocityIterations=6;
   world=engine.world;buildScene();removeQ=[];delayed=[];debris=[];particles=[];for(const t of texts)t.el.remove();texts=[];pins=[];dummy=null;parts=[];
-  rect(2300,200,9000,400,'ground',{isStatic:true,friction:.9});
+  rect(3400,200,12000,400,'ground',{isStatic:true,friction:.9});
   rect(-640,-1500,80,3400,'wall',{isStatic:true});
   rect(WORLD_END+40,-1500,80,3400,'target',{isStatic:true});
   rect(-10,-130,150,260,'tower',{isStatic:true});
@@ -203,8 +207,25 @@ function buildWorld(){
   for(const ox of [4420,4640]){for(let r=0;r<3;r++)for(let i=0;i<3-r;i++)barrel(ox+i*42+r*21,-27-r*54)}
   crate(4560,-23);crate(4560,-69);crate(4790,-23);crate(4838,-23);crate(4814,-69);
   tramp(5020,-30,160,-.1);
+  // 9. launch helpers: cannons, boost hoops, rocket crates, updraft fans, gold hard hats
+  const sens=(x,y,r,kind,ex)=>mk(Bodies.circle(x,y,r,{isStatic:true,isSensor:true}),kind,ex);
+  sens(3700,-60,55,'cannon',{ang:.8});sens(5300,-60,55,'cannon',{ang:.8});
+  sens(1100,-560,62,'hoop');sens(3550,-470,62,'hoop');sens(5850,-520,62,'hoop');
+  for(const x of [1560,4330,6820])rect(x,-23,46,46,'rocket',{density:.0009,friction:.7});
+  sens(2480,-275,30,'hat');sens(3920,-860,30,'hat');sens(6560,-640,30,'hat');
+  fans=[{x:1960,w:160,top:-780},{x:6960,w:160,top:-720}];
+  // 10. domino run
+  for(let i=0;i<10;i++){const d=rect(5480+i*58,-65,22,130,'domino',{density:.0012,friction:.8},{alt:i%2});pins.push(d)}
+  // 11. wrecking ball and the stack it is aimed at
+  const ball=mk(Bodies.circle(6250,-340,55,{density:.006,frictionAir:.002}),'ball',{w:110,h:110});
+  const rope=Constraint.create({pointA:{x:6250,y:-760},bodyB:ball,length:420,stiffness:1});Composite.add(world,rope);
+  ballRig={ball,px:6250,py:-760,rope:null};
+  for(let i=0;i<3;i++)glass(6440,-62-i*120,14,116);
+  for(let r=0;r<5;r++)for(let i=0;i<3;i++)crate(6500+i*48,-23-r*46);
+  barrel(6524,-257);barrel(6572,-257);
+  dressExtras();
   // balloons along the good flight lines
-  [[700,-560],[1080,-720],[1370,-470],[1560,-800],[1900,-640],[2380,-760],[2560,-820],[3100,-440],[3400,-300],[3420,-600],[3920,-780],[4300,-480],[4540,-330],[4760,-520],[5080,-640]]
+  [[700,-560],[1080,-720],[1370,-470],[1560,-800],[1900,-640],[2380,-760],[2560,-820],[3100,-440],[3400,-300],[3420,-600],[3920,-780],[4300,-480],[4540,-330],[4760,-520],[5080,-640],[5450,-420],[6100,-700],[6700,-420],[7100,-600]]
     .forEach((p,i)=>balloon(p[0],p[1],i));
   Events.on(engine,'collisionStart',ev=>{for(const p of ev.pairs)handlePair(p)});
 }
@@ -252,14 +273,14 @@ function shard(x,y,color,r,vx,vy,spread){
 function kill(b){if(b.plugin.dead)return false;b.plugin.dead=true;removeQ.push(b);return true}
 function shatter(g,v){if(!kill(g))return;const {x,y}=g.position,h=g.plugin.h;v=v||{x:0,y:0};
   for(let i=0;i<6;i++)shard(x,y-h/2+h*(i+.5)/6,'glass',11,v.x*.5,v.y*.5,230);
-  burst(x,y,10,'#dff9ff',5,3);addScore(120,x,y,'SMASH',true,COL.glass);sfx.glass();shake=Math.max(shake,5)}
+  stats.glass++;burst(x,y,10,'#dff9ff',5,3);addScore(120,x,y,'SMASH',true,COL.glass);sfx.glass();shake=Math.max(shake,5)}
 function breakCrate(c,v){if(!kill(c))return;const {x,y}=c.position;v=v||{x:0,y:0};
   for(let i=0;i<4;i++)shard(x+(Math.random()-.5)*24,y+(Math.random()-.5)*24,'#c98a4b',13,v.x*.4,v.y*.4);
   burst(x,y,6,'#e3b47a',4,3);addScore(90,x,y,'CRUNCH',true,'#f0b877');sfx.wood()}
-function pop(b){if(!kill(b))return;const {x,y}=b.position;burst(x,y,14,b.plugin.hue,6,4);addScore(200,x,y,'POP',true,b.plugin.hue);sfx.pop()}
+function pop(b){if(!kill(b))return;const {x,y}=b.position;stats.balloons++;burst(x,y,14,b.plugin.hue,6,4);addScore(200,x,y,'POP',true,b.plugin.hue);sfx.pop()}
 function explode(b){
   if(!kill(b))return;const {x,y}=b.position,R=270;
-  addScore(350,x,y,'KABOOM',true,COL.flare);sfx.boom();buzz(60);shake=Math.max(shake,22);flash=1;slow=Math.max(slow,260);
+  stats.barrels++;addScore(350,x,y,'KABOOM',true,COL.flare);sfx.boom();buzz(60);shake=Math.max(shake,22);flash=1;slow=Math.max(slow,260);
   burst(x,y,26,COL.flare,11,7);burst(x,y,16,COL.hazard,8,5);burst(x,y,12,'#5a5468',5,9);
   let toasted=false;
   for(const o of Composite.allBodies(world)){
@@ -300,10 +321,33 @@ function one(s,o,imp,pair){
       break;
     case 'tramp': if(byD&&imp>3&&live){if((s.plugin.cd||0)<tick){s.plugin.cd=tick+40;addScore(60,o.position.x,o.position.y,'BOING',true,COL.glass);sfx.boing();s.plugin.squash=20}}break;
     case 'car': if(live&&!s.plugin.alarm&&imp>5&&ok!=='ground'){s.plugin.alarm=tick+700;addScore(300,s.position.x,s.position.y-50,'VAN ALARM',true,COL.flare);sfx.alarm()}break;
-    case 'target': if(byD&&live&&!hitTarget){hitTarget=true;const dy=Math.abs(o.position.y+350);const bull=dy<70;
+    case 'target': if(byD&&live&&!hitTarget){hitTarget=true;stats.wall=1;const dy=Math.abs(o.position.y+350);const bull=dy<70;
       addScore(bull?2500:Math.max(300,1500-dy*3),o.position.x-40,o.position.y,bull?'BULLSEYE':'FAR WALL',true,COL.hazard);sfx.ding();slow=200}break;
-    case 'dummy': if(live&&imp>3.5)ouch(s,imp);break;
+    case 'hoop': if(byD&&live&&o.plugin.part==='torso'&&(s.plugin.cd||0)<tick){s.plugin.cd=tick+150;boost(9,-6.5);burst(s.position.x,s.position.y,14,COL.hazard,6,4);addScore(150,s.position.x,s.position.y,'BOOST',true,COL.hazard);sfx.boing()}break;
+    case 'hat': if(byD&&live&&kill(s)){stats.hats++;nudges=NUDGES;hud();burst(s.position.x,s.position.y,18,COL.hazard,6,5);addScore(750,s.position.x,s.position.y,'GOLD HARD HAT',true,COL.hazard);sfx.ding();setHint('Nudges refilled')}break;
+    case 'rocket': if(byD&&live&&kill(s)){stats.rockets++;rocketT=170;burst(s.position.x,s.position.y,14,COL.flare,7,5);addScore(300,s.position.x,s.position.y,'ROCKET RIDE',true,COL.flare);sfx.launch();setHint('Rocket ride')}break;
+    case 'cannon': if(byD&&live&&!captured&&o.plugin.part==='torso'&&(s.plugin.cd||0)<tick){captured={c:s,t:0};sfx.wood();setHint('Tap to fire the cannon')}break;
+    case 'ball': if(byD&&live&&imp>4&&(s.plugin.cd||0)<tick){s.plugin.cd=tick+120;const v=Body.getVelocity(s),dv=Body.getVelocity(o);Sleeping.set(s,false);
+      Body.setVelocity(s,{x:v.x+Math.sign(dv.x||1)*Math.max(5,Math.min(15,imp*.8)),y:v.y});addScore(250,s.position.x,s.position.y,'WRECKING BALL',true,COL.chalk)}break;
+    case 'dummy': if(live&&imp>3.5&&!o.isSensor)ouch(s,imp);break;
   }
+}
+function boost(dx,dy){for(const p of parts){Sleeping.set(p,false);const v=Body.getVelocity(p);Body.setVelocity(p,{x:v.x+dx,y:v.y+dy})}}
+function fire(){
+  if(!captured)return;const c=captured.c,a=c.plugin.ang;captured=null;c.plugin.cd=tick+260;stats.cannons++;
+  for(const p of parts){Sleeping.set(p,false);Body.setVelocity(p,{x:Math.cos(a)*31,y:-Math.sin(a)*31})}
+  burst(c.position.x,c.position.y,20,'#5a5468',8,8);burst(c.position.x,c.position.y,10,COL.hazard,7,5);
+  addScore(200,c.position.x,c.position.y-60,'CANNON',true,COL.hazard);sfx.boom();buzz(40);shake=14;restT=0;setHint('Swipe up to lift, down to dive');
+}
+const JOBS=[['Pop 8 balloons',s=>s.balloons>=8],['Smash 14 panes of glass',s=>s.glass>=14],['Blow up 12 barrels',s=>s.barrels>=12],
+  ['Reach a x5 combo',s=>s.maxMult>=5],['Fly 110 m in one launch',s=>s.best>=110*PX_PER_M],['Hit the far wall',s=>s.wall],
+  ['Topple 8 dominoes',s=>s.dominoes>=8],['Ride a rocket',s=>s.rockets>=1],['Fire from a cannon',s=>s.cannons>=1],
+  ['Grab 2 gold hard hats',s=>s.hats>=2],['Knock down 6 pins',s=>s.pins>=6]];
+function showJobs(){const u=$('jobs');u.innerHTML='';for(const j of jobs){const li=document.createElement('li');li.textContent=j.text;if(j.done)li.className='done';u.appendChild(li)}}
+function checkJobs(){
+  stats.maxMult=Math.max(stats.maxMult,mult());stats.best=Math.max(stats.best,maxX);
+  for(const j of jobs)if(!j.done&&j.test(stats)){j.done=true;score+=2000;launchScore+=2000;showJobs();sfx.ding();
+    const t=dummy.torso.position,el=document.createElement('div');el.textContent='JOB DONE +2000';el.style.color=COL.glass;el.style.fontSize='26px';$('fx').appendChild(el);texts.push({x:t.x,y:t.y-90,el,life:170})}
 }
 function handlePair(pair){
   const a=pair.bodyA,b=pair.bodyB,va=Body.getVelocity(a),vb=Body.getVelocity(b),n=pair.collision.normal;
@@ -328,11 +372,12 @@ function hud(){
   const n=$('nudges');if(n.childElementCount!==NUDGES){n.innerHTML='';for(let i=0;i<NUDGES;i++)n.appendChild(document.createElement('i'))}
   [...n.children].forEach((e,i)=>e.className=i<nudges?'':'off');
 }
-function newGame(){buildWorld();score=0;launchNo=0;$('title').hidden=true;$('over').hidden=true;$('hud').hidden=false;nextLaunch()}
+function newGame(){buildWorld();score=0;launchNo=0;stats={balloons:0,glass:0,barrels:0,maxMult:1,best:0,wall:0,dominoes:0,rockets:0,cannons:0,hats:0,pins:0};
+  jobs=JOBS.map(j=>({text:j[0],test:j[1],done:false,r:Math.random()})).sort((a,b)=>a.r-b.r).slice(0,3);showJobs();$('title').hidden=true;$('over').hidden=true;$('hud').hidden=false;nextLaunch()}
 function nextLaunch(){
   $('summary').hidden=true;
   if(launchNo>=LAUNCHES){gameOver();return}
-  launchNo++;launchScore=0;nudges=NUDGES;comboN=0;comboT=0;maxX=0;hitTarget=false;hurt=0;pull={x:-40,y:20};drag=null;swipe=null;
+  launchNo++;launchScore=0;nudges=NUDGES;comboN=0;comboT=0;maxX=0;hitTarget=false;hurt=0;captured=null;rocketT=0;pull={x:-40,y:20};drag=null;swipe=null;
   removeDummy();dummy=makeDummy(ANCHOR.x+pull.x,ANCHOR.y+pull.y);parts=dummy.all;
   state='aim';$('skip').hidden=true;setHint('Drag back and let go');hud();
 }
@@ -351,7 +396,7 @@ function nudge(dx,dy){
   if(nudges===0)setHint('Out of nudges');
 }
 function endLaunch(){
-  if(state!=='fly')return;state='rest';restT=0;$('skip').hidden=true;setHint('');
+  if(state!=='fly')return;checkJobs();captured=null;rocketT=0;state='rest';restT=0;$('skip').hidden=true;setHint('');
   const d=Math.round(maxX/PX_PER_M);
   $('sumTitle').textContent='Launch '+launchNo+' bill';
   $('sumScore').textContent=launchScore.toLocaleString('en-US');
@@ -362,10 +407,10 @@ function gameOver(){
   state='over';removeDummy();$('hud').hidden=true;
   let best=0;try{best=+localStorage.getItem('crashyard.best')||0}catch(e){}
   const isBest=score>best;if(isBest){best=score;try{localStorage.setItem('crashyard.best',String(best))}catch(e){}}
-  const ranks=[[3000,'Paper cut'],[8000,'Fender bender'],[16000,'Wrecking ball'],[28000,'Insurance nightmare'],[Infinity,'Human meteor']];
+  const ranks=[[10000,'Paper cut'],[30000,'Fender bender'],[60000,'Wrecking ball'],[100000,'Insurance nightmare'],[Infinity,'Human meteor']];
   $('rank').textContent=ranks.find(r=>score<r[0])[1];
   $('final').textContent=score.toLocaleString('en-US');
-  $('best').textContent=isBest?'New personal best damage bill.':'Your best bill: '+best.toLocaleString('en-US');
+  const jd=jobs.filter(j=>j.done).length;$('best').textContent='Jobs done: '+jd+' of 3. '+(isBest?'New personal best damage bill.':'Your best bill: '+best.toLocaleString('en-US'));
   $('over').hidden=false;
 }
 
@@ -374,7 +419,7 @@ function pt(e){const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.
 cv.addEventListener('pointerdown',e=>{
   audio();const p=pt(e);try{cv.setPointerCapture(e.pointerId)}catch(_){}
   if(state==='aim')drag={sx:p.x,sy:p.y,ox:pull.x,oy:pull.y,moved:false};
-  else if(state==='fly')swipe={sx:p.x,sy:p.y};
+  else if(state==='fly'){if(captured)fire();else swipe={sx:p.x,sy:p.y}}
   else if(state==='rest'&&restT>50)nextLaunch();
   e.preventDefault();
 });
@@ -402,11 +447,23 @@ function step(){
   tick++;
   if(state==='aim'&&dummy){const t=dummy.torso;Sleeping.set(t,false);
     Body.setPosition(t,{x:ANCHOR.x+pull.x,y:ANCHOR.y+pull.y});Body.setVelocity(t,{x:0,y:0});Body.setAngle(t,0);Body.setAngularVelocity(t,0)}
+  if(state==='fly'&&dummy){
+    const t=dummy.torso;
+    if(captured){const c=captured.c;captured.t++;c.plugin.ang=.35+.5*(1+Math.sin(captured.t*.03-1.2));restT=0;
+      Sleeping.set(t,false);Body.setPosition(t,{x:c.position.x,y:c.position.y});Body.setVelocity(t,{x:0,y:0});Body.setAngularVelocity(t,0);
+      if(captured.t>540)fire()}
+    if(rocketT>0){rocketT--;if(Body.getSpeed(t)<42)boost(.17,-.27);
+      if(tick%3===0)particles.push({x:t.position.x-10,y:t.position.y+10,z:0,vx:-4+Math.random()*2,vy:2+Math.random()*2,life:40,c:tick%2?COL.flare:COL.hazard,s:7})}
+    for(const f of fans)if(Math.abs(t.position.x-f.x)<f.w/2&&t.position.y>f.top){
+      if(Body.getVelocity(t).y>-17)boost(0,-.4);restT=0;
+      if(!f.cd||f.cd<tick){addScore(100,t.position.x,t.position.y,'UPDRAFT',true,COL.glass)}f.cd=tick+60}
+  }
+  for(const f of fans)if(tick%5===0&&particles.length<240)particles.push({x:f.x+(Math.random()-.5)*f.w*.8,y:-30,z:(Math.random()-.5)*110,vx:0,vy:-9-Math.random()*5,life:70,c:'#8fe3ee',s:3});
   Engine.update(engine,SUB);
   flushRemovals();
   for(let i=delayed.length-1;i>=0;i--)if(delayed[i].t<=tick){const d=delayed.splice(i,1)[0];d.fn()}
   if(tick%12===0){
-    for(let i=pins.length-1;i>=0;i--){const p=pins[i];if(Math.abs(p.angle)>1.1){pins.splice(i,1);addScore(150,p.position.x,p.position.y-30,'STRIKE',true,COL.chalk)}}
+    for(let i=pins.length-1;i>=0;i--){const p=pins[i];if(Math.abs(p.angle)>1.1){pins.splice(i,1);const dm=p.plugin.kind==='domino';if(dm)stats.dominoes++;else stats.pins++;if(state==='fly')addScore(dm?100:150,p.position.x,p.position.y-30,dm?'DOMINO':'STRIKE',true,COL.chalk)}}
     for(let i=debris.length-1;i>=0;i--){const d=debris[i];if(d.plugin.dead)debris.splice(i,1);else if(d.plugin.die<tick){kill(d);debris.splice(i,1)}}
   }
   if(comboT>0&&--comboT===0)comboN=0;
@@ -414,7 +471,7 @@ function step(){
   if(state==='fly'){
     flyT++;const t=dummy.torso;maxX=Math.max(maxX,t.position.x);
     if(flyT===260)$('skip').hidden=false;
-    if(flyT%12===0)hud();
+    if(flyT%12===0){hud();checkJobs()}
     const sp=Body.getSpeed(t);
     if(sp<.7&&flyT>90)restT++;else restT=Math.max(0,restT-2);
     if(restT>(nudges>0?330:200)||flyT>120*40||t.position.y>600)endLaunch();
@@ -461,7 +518,7 @@ function buildScene(){
   // skyline
   const r=mulberry(11),N=150,sky=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),mat(0x2b2140),N),o=new THREE.Object3D();
   for(let i=0;i<N;i++){const w=160+r()*320,h=220+r()*900,far=i>115;let x,z;
-    if(far){x=WORLD_END+1400+r()*3200;z=(r()-.5)*7000}else{x=-1800+r()*9500;z=i%2?-(560+r()*2400):2300+r()*2200}
+    if(far){x=WORLD_END+1400+r()*3200;z=(r()-.5)*7000}else{x=-1800+r()*(WORLD_END+4200);z=i%2?-(560+r()*2400):2300+r()*2200}
     o.position.set(x,h/2,z);o.scale.set(w,h,160+r()*320);o.updateMatrix();sky.setMatrixAt(i,o.matrix)}
   scene.add(sky);
   // set dressing
@@ -482,6 +539,13 @@ function buildScene(){
   pg.setAttribute('position',new THREE.BufferAttribute(ptPos,3));pg.setAttribute('color',new THREE.BufferAttribute(ptCol,3));
   pts=new THREE.Points(pg,new THREE.PointsMaterial({size:11,vertexColors:true,sizeAttenuation:true}));pts.frustumCulled=false;scene.add(pts);
   dyn=new THREE.Group();scene.add(dyn);
+}
+function dressExtras(){
+  const dark=mat(0x3c3650);
+  for(const f of fans){let c=new THREE.Mesh(geo('fanb',()=>new THREE.CylinderGeometry(78,88,22,20)),dark);c.position.set(f.x,11,0);scene.add(c);
+    f.blade=new THREE.Group();for(const r of [0,Math.PI/2]){c=box(140,4,20,mat(0x8fe3ee));c.rotation.y=r;f.blade.add(c)}f.blade.position.set(f.x,26,0);scene.add(f.blade);
+    c=box(f.w,-f.top,f.w,mat(0x8fe3ee,{transparent:true,opacity:.07,depthWrite:false}));c.position.set(f.x,-f.top/2,0);scene.add(c)}
+  if(ballRig){let c=box(16,800,16,dark);c.position.set(ballRig.px,400,-210);scene.add(c);c=box(12,12,230,dark);c.position.set(ballRig.px,-ballRig.py+6,-100);scene.add(c)}
 }
 function dropMesh(b){const m=meshes.get(b.id);if(m)dyn.remove(m);meshes.delete(b.id)}
 function meshFor(b){
@@ -506,6 +570,17 @@ function meshFor(b){
       [[130,0xf4efe6],[95,0xff5a3c],[60,0xf4efe6],[28,0xff5a3c]].forEach((r,i)=>{c=new THREE.Mesh(new THREE.CircleGeometry(r[0],36),new THREE.MeshBasicMaterial({color:r[1]}));c.rotation.y=-Math.PI/2;c.position.set(-41-i,350-1700,0);m.add(c)});return m;
     case 'balloon':m=new THREE.Mesh(geo('bal',()=>new THREE.SphereGeometry(25,16,12)),mat(p.hue));m.scale.y=1.15;return m;
     case 'shard':m=new THREE.Mesh(geo('sh',()=>new THREE.TetrahedronGeometry(1)),p.color==='glass'?mat(0xbdf3fa,{transparent:true,opacity:.7}):mat(0xc98a4b));m.scale.set(p.r,p.r,p.r*.45);return m;
+    case 'hoop':m=new THREE.Group();c=new THREE.Mesh(geo('hoop',()=>new THREE.TorusGeometry(62,7,8,30)),new THREE.MeshBasicMaterial({color:0xffc21a}));c.rotation.y=Math.PI/2;m.add(c);
+      c=new THREE.Mesh(geo('hoopi',()=>new THREE.TorusGeometry(46,3,6,30)),new THREE.MeshBasicMaterial({color:0xff5a3c}));c.rotation.y=Math.PI/2;m.add(c);return m;
+    case 'hat':m=new THREE.Group();c=new THREE.Mesh(geo('hat',()=>new THREE.SphereGeometry(22,14,8,0,6.3,0,1.6)),new THREE.MeshBasicMaterial({color:0xffd447}));m.add(c);
+      c=new THREE.Mesh(geo('brim',()=>new THREE.CylinderGeometry(31,31,4,18)),new THREE.MeshBasicMaterial({color:0xe0a800}));m.add(c);return m;
+    case 'rocket':m=box(w,h,w,mat(0xff5a3c));c=box(w+1,10,w+1,mat(0xf4efe6));m.add(c);
+      c=new THREE.Mesh(geo('cone',()=>new THREE.ConeGeometry(18,34,12)),mat(0xffc21a));c.position.y=h/2+17;m.add(c);return m;
+    case 'cannon':{m=new THREE.Group();c=box(100,50,110,mat(0x3c3650));c.position.y=-35;m.add(c);
+      const pv=new THREE.Group();c=new THREE.Mesh(geo('cbar',()=>new THREE.CylinderGeometry(34,40,140,18,1,true)),mat(0x5a5468,{side:THREE.DoubleSide}));c.position.y=30;pv.add(c);
+      c=new THREE.Mesh(geo('cring',()=>new THREE.CylinderGeometry(37,37,14,18,1,true)),mat(0xffc21a,{side:THREE.DoubleSide}));c.position.y=92;pv.add(c);m.add(pv);m.userData.barrel=pv;return m}
+    case 'ball':return new THREE.Mesh(geo('wball',()=>new THREE.SphereGeometry(55,20,16)),mat(0x4a4658));
+    case 'domino':return box(w,h,100,mat(p.alt?0xf4efe6:0x1fb5a8));
     case 'dummy':
       if(p.part==='head'){m=new THREE.Mesh(geo('hd',()=>new THREE.SphereGeometry(12,16,12)),mat(0xffc21a));c=new THREE.Mesh(geo('hb',()=>new THREE.CylinderGeometry(12.4,12.4,5,16)),mat(0x161427));m.add(c);return m}
       m=box(w,h,p.part==='torso'?26:w,mat(0xffc21a));
@@ -524,7 +599,12 @@ function sync(){
     const p=b.plugin;
     m.position.set(b.position.x,-b.position.y+(p.kind==='balloon'?Math.sin(tick*.02+b.position.x)*4:0),p.zo||0);
     m.rotation.z=-b.angle;
+    if(p.kind==='hat')m.rotation.y=tick*.03;
+    else if(p.kind==='cannon')m.userData.barrel.rotation.z=p.ang-Math.PI/2;
   }
+  if(ballRig){if(!ballRig.rope){ballRig.rope=new THREE.Mesh(geo('band',()=>new THREE.BoxGeometry(5,5,1)),mat(0x8d86a3));scene.add(ballRig.rope)}
+    const bp=ballRig.ball.position;stretch(ballRig.rope,ballRig.px,-ballRig.py,0,bp.x,-bp.y,0)}
+  for(const f of fans)if(f.blade)f.blade.rotation.y=tick*.25;
   const on=carLights.length&&Composite.allBodies(world).some(b=>b.plugin.kind==='car'&&b.plugin.alarm>tick)&&(tick>>4)%2;
   for(const l of carLights)l.color.setHex(on?0xff5a3c:0x8e3327);
   // slingshot bands, aim dots, ground shadow
